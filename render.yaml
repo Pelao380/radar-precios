@@ -1,0 +1,18 @@
+# Blueprint de Render: solo la API (plan gratuito). Render > New > Blueprint.
+# DATABASE_URL se pide al crear el servicio (no se versiona).
+services:
+  - type: web
+    name: radar-precios-api
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: EMBEDDINGS_PROVIDER
+        value: hashing
+      - key: ANTHROPIC_API_KEY
+        sync: false

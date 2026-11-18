@@ -2,7 +2,8 @@
 
 python -m radar.cli init                 # crea extensión, tablas y vistas
 python -m radar.cli backfill --days 120  # historial simulado (síncrono, sin cola)
-python -m radar.cli scrape               # encola un scraping de todas las tiendas
+python -m radar.cli scrape               # encola un scraping de todas las tiendas (Celery)
+python -m radar.cli run                  # mismo pipeline, síncrono y sin cola (cron de GitHub Actions)
 python -m radar.cli alerts               # evalúa alertas ahora
 """
 
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 import time
 from datetime import date, timedelta
 
@@ -38,6 +40,33 @@ def backfill(days: int, end: date | None = None) -> None:
     print(f"backfill {days + 1} días x {len(STORES)} tiendas en {dt:.1f}s: {totals}")
 
 
+def run_once(day: date | None = None) -> int:
+    """Scraping -> ETL -> estadísticas -> alertas, sin cola.
+
+    Es el mismo trabajo que `tasks.scrape_all`, para entornos sin worker
+    permanente (la demo gratuita lo ejecuta desde GitHub Actions cada 6 h).
+    Cada tienda va en su propia transacción: si una falla, las demás se
+    guardan igual. Devuelve el número de tiendas que fallaron.
+    """
+    from .alerts import evaluate_alerts
+
+    day = day or date.today()
+    failed = 0
+    for slug in STORES:
+        try:
+            listings = get_source(slug).fetch(day)
+            with SessionLocal.begin() as session:
+                r = process_snapshot(session, store_snapshot(session, slug, day, listings))
+            print(f"{slug}: {r.items} fichas, {r.new_products} productos nuevos")
+        except Exception as exc:  # noqa: BLE001 - se reporta y se sigue con la siguiente tienda
+            failed += 1
+            print(f"{slug}: ERROR {exc!r}", file=sys.stderr)
+    refresh_stats()
+    with SessionLocal.begin() as session:
+        print("alertas enviadas:", evaluate_alerts(session))
+    return failed
+
+
 def main() -> None:
     logging.basicConfig(level=logging.WARNING)
     ap = argparse.ArgumentParser(prog="radar")
@@ -47,6 +76,7 @@ def main() -> None:
     b.add_argument("--days", type=int, default=120)
     b.add_argument("--force", action="store_true", help="cargar aunque ya existan datos")
     sub.add_parser("scrape")
+    sub.add_parser("run")
     sub.add_parser("alerts")
     args = ap.parse_args()
 
@@ -65,6 +95,9 @@ def main() -> None:
         from .tasks import scrape_all
 
         print("encolado:", scrape_all.delay().id)
+    elif args.cmd == "run":
+        init_db()
+        sys.exit(1 if run_once() else 0)
     elif args.cmd == "alerts":
         from .alerts import evaluate_alerts
 

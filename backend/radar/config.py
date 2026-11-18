@@ -5,7 +5,8 @@ from dataclasses import dataclass, field
 
 
 def _env(name: str, default: str) -> str:
-    return os.environ.get(name, default)
+    # vacío = no definido (GitHub Actions entrega "" para secretos que no existen)
+    return os.environ.get(name) or default
 
 
 @dataclass(frozen=True)

@@ -132,3 +132,20 @@ def test_api_endpoints(loaded_db):
     assert c.get("/products/999999").status_code == 404
     assert c.post("/alerts", json={"email": "no-es-correo", "product_id": pid}).status_code == 422
     assert c.post("/alerts", json={"email": "a@example.com", "product_id": pid}).status_code == 201
+
+
+def test_run_once_adds_a_day_without_queue(loaded_db):
+    from datetime import timedelta
+
+    from sqlalchemy import text
+
+    from radar.cli import run_once
+    from radar.db import SessionLocal
+
+    next_day = loaded_db + timedelta(days=1)
+    assert run_once(next_day) == 0
+    with SessionLocal() as s:
+        last = s.execute(text("SELECT MAX(observed_on) FROM price_observations")).scalar()
+        listings = s.execute(text("SELECT COUNT(*) FROM listings")).scalar()
+    assert last == next_day
+    assert listings == 160  # mismo catálogo: no crea fichas ni productos nuevos

@@ -181,20 +181,38 @@ CI (GitHub Actions) corre lint, tests unitarios y de integración contra
 `pgvector/pgvector:pg16`, la evaluación de deduplicación (en el resumen del job),
 typecheck y build de Next.js, y `docker compose build`.
 
-## Despliegue (demo 24/7)
+## Despliegue (demo gratuita)
 
-Docker Compose sirve para desarrollo: solo está en línea mientras tu PC lo esté.
-Para una demo pública se usa el mismo código con otras variables de entorno:
+La demo pública corre sin costo, con una diferencia deliberada respecto al entorno local:
 
-| Pieza | Servicio sugerido | Variable |
+| Pieza | Servicio | Plan |
 |---|---|---|
-| PostgreSQL + pgvector | Neon | `DATABASE_URL` (se acepta `postgresql://…`) |
-| Redis | Upstash | `REDIS_URL` (`rediss://…?ssl_cert_reqs=required`, que Celery exige con TLS) |
-| API | Render / Fly.io (Dockerfile de `backend/`) | — |
-| Worker + beat | Un solo proceso: `celery -A radar.tasks worker -B -Q celery,etl -c 1` | — |
-| Dashboard | Vercel (carpeta `frontend/`) | `API_URL` |
+| PostgreSQL + pgvector | Neon | Free (1 GB, escala a cero) |
+| API FastAPI | Render (`render.yaml`, Dockerfile de `backend/`) | Free |
+| Dashboard | Vercel (carpeta `frontend/`, variable `API_URL`) | Hobby |
+| Scheduler | GitHub Actions (`.github/workflows/scrape.yml`, cada 6 h) | gratis en repos públicos |
 
-Después del primer deploy: `python -m radar.cli backfill --days 120`.
+**Por qué no hay Celery en producción.** Celery necesita un worker siempre
+encendido y un broker. Ningún proveedor gratuito ofrece workers (en Render el
+más barato cuesta US$7/mes), y el Redis gratuito de Upstash (500.000 operaciones
+al mes) no aguanta a un worker de Celery, que consulta el broker de forma
+continua (decenas de miles de operaciones al día). Para una
+carga de 4 tiendas cada 6 horas, un cron que ejecuta `python -m radar.cli run`
+hace el mismo trabajo (scraping → ETL → estadísticas → alertas) con las mismas
+funciones idempotentes. Celery sigue siendo la arquitectura para volumen real,
+y es la que corre en `docker compose`: cambiar de una a otra no toca el ETL.
+
+Contrapartidas conocidas:
+- La API gratuita de Render se duerme tras 15 min sin tráfico; la primera visita
+  tarda ~1 min (el dashboard muestra un aviso mientras tanto).
+- GitHub pausa los cron de repos públicos tras 60 días sin actividad.
+
+Pasos:
+1. Neon: crear proyecto y copiar la *connection string*.
+2. GitHub → Settings → Secrets → Actions: `DATABASE_URL`. Luego Actions →
+   «Scrape programado» → *Run workflow* con `backfill_days = 120` (carga inicial).
+3. Render → New → Blueprint con este repo; pegar `DATABASE_URL`.
+4. Vercel → importar el repo, *Root Directory* `frontend`, variable `API_URL` = URL de Render.
 
 ## Estructura
 
