@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -128,10 +128,10 @@ def process_snapshot(session: Session, snapshot_id: int, embedder: Embedder | No
         result.new_listings += 1
 
     rows = []
+    seen_ids = []
     for d in snap.payload:
         listing = existing[d["sku"]]
-        if snap.observed_on > listing.last_seen:
-            listing.last_seen = snap.observed_on
+        seen_ids.append(listing.id)
         rows.append(
             {
                 "listing_id": listing.id,
@@ -147,6 +147,13 @@ def process_snapshot(session: Session, snapshot_id: int, embedder: Embedder | No
             set_={"price": stmt.excluded.price, "list_price": stmt.excluded.list_price},
         )
         session.execute(stmt)
+        # un solo UPDATE por snapshot (antes: uno por ficha, ~40 viajes de red a una base remota)
+        session.execute(
+            update(Listing)
+            .where(Listing.id.in_(seen_ids), Listing.last_seen < snap.observed_on)
+            .values(last_seen=snap.observed_on)
+            .execution_options(synchronize_session=False)
+        )
     result.observations = len(rows)
     snap.processed = True
     log.info("ETL snapshot=%s %s", snapshot_id, result)

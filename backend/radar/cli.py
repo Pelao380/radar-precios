@@ -1,7 +1,7 @@
 """Comandos de mantenimiento.
 
 python -m radar.cli init                 # crea extensión, tablas y vistas
-python -m radar.cli backfill --days 120  # historial simulado (síncrono, sin cola)
+python -m radar.cli backfill --days 120  # historial simulado (síncrono, reanudable)
 python -m radar.cli scrape               # encola un scraping de todas las tiendas (Celery)
 python -m radar.cli run                  # mismo pipeline, síncrono y sin cola (cron de GitHub Actions)
 python -m radar.cli alerts               # evalúa alertas ahora
@@ -23,21 +23,36 @@ from .sources import STORES, get_source
 
 
 def backfill(days: int, end: date | None = None) -> None:
-    """Carga `days` días de historial ejecutando el mismo ETL que la cola."""
+    """Carga `days` días de historial ejecutando el mismo ETL que la cola.
+
+    Reanudable: se salta los pares (tienda, día) que ya tienen snapshot, así
+    que si se corta a mitad de camino basta con volver a ejecutarlo.
+    """
     end = end or date.today()
     t0 = time.perf_counter()
     totals = {"observations": 0, "new_products": 0, "new_listings": 0}
+    with SessionLocal() as session:
+        done = set(
+            session.execute(
+                text("SELECT s.slug, r.observed_on FROM raw_snapshots r JOIN stores s ON s.id = r.store_id")
+            ).all()
+        )
+    skipped = 0
     for i in range(days, -1, -1):
         day = end - timedelta(days=i)
-        with SessionLocal.begin() as session:
-            for slug in STORES:
+        pending = [slug for slug in STORES if (slug, day) not in done]
+        skipped += len(STORES) - len(pending)
+        if not pending:
+            continue
+        with SessionLocal.begin() as session:  # un commit por día: el avance queda guardado
+            for slug in pending:
                 snap_id = store_snapshot(session, slug, day, get_source(slug, "simulated").fetch(day))
                 r = process_snapshot(session, snap_id)
                 for k in totals:
                     totals[k] += getattr(r, k)
     refresh_stats()
     dt = time.perf_counter() - t0
-    print(f"backfill {days + 1} días x {len(STORES)} tiendas en {dt:.1f}s: {totals}")
+    print(f"backfill {days + 1} días x {len(STORES)} tiendas en {dt:.1f}s ({skipped} ya cargados): {totals}")
 
 
 def run_once(day: date | None = None) -> int:
@@ -74,7 +89,6 @@ def main() -> None:
     sub.add_parser("init")
     b = sub.add_parser("backfill")
     b.add_argument("--days", type=int, default=120)
-    b.add_argument("--force", action="store_true", help="cargar aunque ya existan datos")
     sub.add_parser("scrape")
     sub.add_parser("run")
     sub.add_parser("alerts")
@@ -85,12 +99,7 @@ def main() -> None:
         print("ok")
     elif args.cmd == "backfill":
         init_db()
-        with SessionLocal() as session:
-            has_data = session.execute(text("SELECT EXISTS (SELECT 1 FROM price_observations)")).scalar()
-        if has_data and not args.force:
-            print("ya hay datos; backfill omitido (usa --force para recargar)")
-        else:
-            backfill(args.days)
+        backfill(args.days)
     elif args.cmd == "scrape":
         from .tasks import scrape_all
 

@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       backfill_days:
-        description: "Carga inicial: días de historial a generar (0 = solo el run normal)"
+        description: "Carga inicial: días de historial a generar, reanudable (0 = solo el run normal)"
         default: "0"
 
 concurrency:
@@ -22,7 +22,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: backend

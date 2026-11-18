@@ -149,3 +149,16 @@ def test_run_once_adds_a_day_without_queue(loaded_db):
         listings = s.execute(text("SELECT COUNT(*) FROM listings")).scalar()
     assert last == next_day
     assert listings == 160  # mismo catálogo: no crea fichas ni productos nuevos
+
+
+def test_backfill_is_resumable(loaded_db):
+    from sqlalchemy import text
+
+    from radar.cli import backfill
+    from radar.db import SessionLocal
+
+    with SessionLocal() as s:
+        before = s.execute(text("SELECT COUNT(*) FROM raw_snapshots")).scalar()
+    backfill(days=45, end=END)  # ya cargado: no debe crear snapshots nuevos
+    with SessionLocal() as s:
+        assert s.execute(text("SELECT COUNT(*) FROM raw_snapshots")).scalar() == before
