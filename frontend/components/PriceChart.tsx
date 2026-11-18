@@ -51,6 +51,7 @@ export function PriceChart({
               dot={false}
               strokeWidth={2}
               connectNulls
+              isAnimationActive={false}
             />
           ))}
         </LineChart>
