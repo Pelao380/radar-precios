@@ -1,0 +1,39 @@
+[project]
+name = "radar-precios"
+version = "0.1.0"
+description = "Radar de precios de supermercados chilenos: scraping programado, ETL, deduplicación con embeddings y búsqueda en lenguaje natural."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic[email]>=2.8",
+    "sqlalchemy>=2.0.30",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3",
+    "celery[redis]>=5.4",
+    "redis>=5.0",
+    "httpx>=0.27",
+    "anthropic>=0.60",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "fakeredis>=2.23"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["radar*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["db: requiere PostgreSQL con pgvector (DATABASE_URL)"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "B008", "B905"]

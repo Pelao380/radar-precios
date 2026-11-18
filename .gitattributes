@@ -1,0 +1,4 @@
+# LF en todo el repo: los archivos se ejecutan en contenedores Linux y en CI
+* text=auto eol=lf
+*.png binary
+*.jpg binary

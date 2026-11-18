@@ -1,0 +1,78 @@
+# Entorno local completo:  docker compose up --build
+#   web      http://localhost:3000   dashboard Next.js
+#   api      http://localhost:8000/docs
+#   mailpit  http://localhost:8025   bandeja de correo de prueba (alertas)
+x-backend: &backend
+  build: ./backend
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DATABASE_URL: postgresql+psycopg://radar:radar@db:5432/radar
+    REDIS_URL: redis://redis:6379/0
+    SMTP_HOST: mailpit
+    SMTP_PORT: "1025"
+  depends_on:
+    db: { condition: service_healthy }
+    redis: { condition: service_started }
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: radar
+      POSTGRES_PASSWORD: radar
+      POSTGRES_DB: radar
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U radar"]
+      interval: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports: ["8025:8025"]
+
+  # Crea el esquema y carga 120 días de historial simulado (se salta si ya hay datos)
+  seed:
+    <<: *backend
+    command: ["python", "-m", "radar.cli", "backfill", "--days", "120"]
+    restart: "no"
+
+  api:
+    <<: *backend
+    ports: ["8000:8000"]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+
+  # Scrapers: concurrencia 4 en la cola por defecto
+  worker:
+    <<: *backend
+    command: ["celery", "-A", "radar.tasks", "worker", "-Q", "celery", "-c", "4", "--loglevel=info"]
+
+  # ETL serializado (concurrencia 1) para no crear productos duplicados en paralelo
+  worker-etl:
+    <<: *backend
+    command: ["celery", "-A", "radar.tasks", "worker", "-Q", "etl", "-c", "1", "--loglevel=info", "-n", "etl@%h"]
+
+  beat:
+    <<: *backend
+    # la agenda va en /tmp: el contenedor corre sin root y /app no es escribible
+    command: ["celery", "-A", "radar.tasks", "beat", "--loglevel=info", "-s", "/tmp/celerybeat-schedule"]
+
+  web:
+    build: ./frontend
+    environment:
+      API_URL: http://api:8000
+    ports: ["3000:3000"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
