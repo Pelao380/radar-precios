@@ -1,5 +1,11 @@
 # Radar de precios 🇨🇱
 
+[![CI](https://github.com/Pelao380/radar-precios/actions/workflows/ci.yml/badge.svg)](https://github.com/Pelao380/radar-precios/actions/workflows/ci.yml)
+[![Scrape programado](https://github.com/Pelao380/radar-precios/actions/workflows/scrape.yml/badge.svg)](https://github.com/Pelao380/radar-precios/actions/workflows/scrape.yml)
+
+**Demo:** https://radar-precios-kappa.vercel.app · **API:** https://radar-precios-api-7lej.onrender.com/docs
+*(plan gratuito: si la API lleva un rato sin visitas, la primera carga tarda ~1 min)*
+
 Sistema que recolecta precios de supermercados chilenos de forma periódica, los
 normaliza y deduplica entre tiendas, guarda el historial en PostgreSQL y lo
 muestra en un dashboard con búsqueda en lenguaje natural y alertas por correo.
